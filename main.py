@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from routes.auth_routes import router as auth_router
+from fastapi.middleware.cors import CORSMiddleware
 from routes.banking_routes import router as banking_router
 
 app = FastAPI()
