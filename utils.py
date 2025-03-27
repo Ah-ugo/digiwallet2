@@ -32,14 +32,14 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
 
-MONNIFY_CONTRACT_CODE = "4001509973"
-MONNIFY_BASE_URL_2 = "https://sandbox.monnify.com/api/v2/bank-transfer/reserved-accounts"
-MONNIFY_BASE_URL = "https://sandbox.monnify.com/api/v1"
+MONNIFY_CONTRACT_CODE = "552949494001"
+MONNIFY_BASE_URL_2 = "https://api.monnify.com/api/v2/bank-transfer/reserved-accounts"
+MONNIFY_BASE_URL = "https://api.monnify.com/api/v1"
 PAYSTACK_SECRET = os.getenv("PAYSTACK_SECRET")
 MONNIFY_SECRET = os.getenv("MONNIFY_SECRET")
 MONNIFY_API_KEY = os.getenv("MONNIFY_API_KEY")
 MONNIFY_WALLET_ACCOUNT = os.getenv("MONNIFY_WALLET_ACCOUNT")
-MONNIFY_BASE_URL_3 = "https://sandbox.monnify.com/api/v2/disbursements/single"
+MONNIFY_BASE_URL_3 = "https://api.monnify.com/api/v2/disbursements/single"
 monnify_token = None
 token_expiry = 0
 
@@ -81,7 +81,7 @@ def initiate_deposit(email: str, amount: float):
 
 
 def initiate_transfer(recipient_account: str, bank_code: str, amount: float):
-    url = "https://sandbox.monnify.com/api/v2/disbursements/single"
+    url = "https://api.monnify.com/api/v2/disbursements/single"
     headers = {"Authorization": f"Bearer {MONNIFY_API_KEY}"}
     data = {
         "amount": amount,
@@ -172,7 +172,7 @@ def create_reserved_account(account_reference, account_name, customer_email, bvn
 
     try:
         response = requests.post(
-            "https://sandbox.monnify.com/api/v2/bank-transfer/reserved-accounts",
+            "https://api.monnify.com/api/v2/bank-transfer/reserved-accounts",
             json=data,
             headers=headers,
         )
@@ -276,7 +276,7 @@ def get_all_banks():
     }
 
     try:
-        response = requests.get("https://sandbox.monnify.com/api/v1/banks", headers=headers)
+        response = requests.get("https://api.monnify.com/api/v1/banks", headers=headers)
         response.raise_for_status()
         return response.json()["responseBody"]
     except requests.exceptions.RequestException as e:
@@ -341,7 +341,7 @@ def initiate_monnify_transfer(amount, reference, narration, destination_bank_cod
 
     try:
         # Using the correct disbursement endpoint according to Monnify's API
-        url = "https://sandbox.monnify.com/api/v2/disbursements/single"
+        url = "https://api.monnify.com/api/v2/disbursements/single"
         response = requests.post(url, json=data, headers=headers)
 
         # Log the raw response for debugging
