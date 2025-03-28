@@ -396,6 +396,10 @@ async def monnify_webhook(request: Request):
 
                 result = users.update_one({"_id": user["_id"]}, {"$set": {"wallet_balance": new_balance}})
 
+                if result.modified_count == 0:
+                    logging.error(f"Failed to update balance for user {user['_id']}")
+                    raise HTTPException(status_code=500, detail="Failed to update balance")
+
                 logging.info(f"Database update result: {result.modified_count}")
 
                 transaction = {
@@ -420,6 +424,7 @@ async def monnify_webhook(request: Request):
             if not sender:
                 logging.error(f"No sender found for account {source_account}")
                 raise HTTPException(status_code=400, detail="Sender not found")
+
             try:
                 current_balance = float(sender.get("wallet_balance", 0))
                 new_balance = current_balance - amount
@@ -427,6 +432,10 @@ async def monnify_webhook(request: Request):
                 logging.info(f"Updating balance for sender {sender['_id']}. Current balance: {current_balance}, amount: {amount}, new balance: {new_balance}")
 
                 result = users.update_one({"_id": sender["_id"]}, {"$set": {"wallet_balance": new_balance}})
+
+                if result.modified_count == 0:
+                    logging.error(f"Failed to update balance for sender {sender['_id']}")
+                    raise HTTPException(status_code=500, detail="Failed to update balance")
 
                 logging.info(f"Database update result: {result.modified_count}")
 
