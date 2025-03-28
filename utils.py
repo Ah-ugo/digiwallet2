@@ -15,6 +15,7 @@ import time
 from database import users
 from bson import ObjectId
 import logging
+import json
 
 load_dotenv()
 
@@ -99,19 +100,83 @@ def upload_image(image):
 
 # monnify setup
 
+# def get_monnify_token():
+#     """Fetch and cache Monnify authentication token."""
+#     credentials = f"{MONNIFY_API_KEY}:{MONNIFY_SECRET}"
+#     encoded_credentials = base64.b64encode(credentials.encode()).decode()
+#
+#     headers = {"Authorization": f"Basic {encoded_credentials}"}
+#     response = requests.post(f"{MONNIFY_BASE_URL}/auth/login", headers=headers)
+#
+#     if response.status_code == 200:
+#         data = response.json()["responseBody"]
+#         return data["accessToken"]
+#
+#     raise Exception("Failed to authenticate with Monnify")
+
+
+
+
 def get_monnify_token():
-    """Fetch and cache Monnify authentication token."""
-    credentials = f"{MONNIFY_API_KEY}:{MONNIFY_SECRET}"
-    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+    """
+    Fetch Monnify authentication token with enhanced error handling
+    Ref: https://docs.monnify.com/v1.0/reference/authentication
+    """
+    try:
+        # Encode credentials using Base64
+        credentials = f"{MONNIFY_API_KEY}:{MONNIFY_SECRET}"
+        encoded_credentials = base64.b64encode(credentials.encode()).decode()
 
-    headers = {"Authorization": f"Basic {encoded_credentials}"}
-    response = requests.post(f"{MONNIFY_BASE_URL}/auth/login", headers=headers)
+        # Prepare headers for authentication
+        headers = {
+            "Authorization": f"Basic {encoded_credentials}",
+            "Content-Type": "application/json"
+        }
 
-    if response.status_code == 200:
-        data = response.json()["responseBody"]
-        return data["accessToken"]
+        # Authentication endpoint
+        auth_url = "https://api.monnify.com/api/v1/auth/login"
 
-    raise Exception("Failed to authenticate with Monnify")
+        # Make authentication request
+        response = requests.post(auth_url, headers=headers)
+
+        # Log full response for debugging
+        logging.info(f"Monnify Auth Response Status: {response.status_code}")
+        logging.info(f"Monnify Auth Response Headers: {response.headers}")
+        logging.info(f"Monnify Auth Response Body: {response.text}")
+
+        # Check response status
+        if response.status_code == 200:
+            # Parse JSON response
+            data = response.json()
+
+            # Extract and return access token
+            access_token = data.get('responseBody', {}).get('accessToken')
+
+            if not access_token:
+                logging.error("No access token found in Monnify response")
+                raise Exception("Failed to retrieve Monnify access token")
+
+            return access_token
+        else:
+            # Detailed error logging
+            logging.error(f"Monnify Authentication Failed: {response.status_code}")
+            logging.error(f"Response Body: {response.text}")
+
+            # Raise specific exceptions based on response
+            if response.status_code == 401:
+                raise Exception("Monnify Authentication Failed: Invalid Credentials")
+            elif response.status_code == 403:
+                raise Exception("Monnify Authentication Failed: IP not whitelisted")
+            else:
+                raise Exception(f"Monnify Authentication Failed: {response.text}")
+
+    except requests.exceptions.RequestException as req_error:
+        logging.error(f"Monnify Request Error: {req_error}")
+        raise Exception(f"Network Error: {req_error}")
+    except Exception as e:
+        logging.error(f"Unexpected Monnify Authentication Error: {e}")
+        raise Exception("Failed to authenticate with Monnify")
+
 
 
 # def create_reserved_account(user_id: str):
@@ -315,48 +380,96 @@ def get_all_banks():
 
 def initiate_monnify_transfer(amount, reference, narration, destination_bank_code, destination_account_number,
                               source_account_number):
-    """Initiate a single transfer using Monnify."""
-    token = get_monnify_token()
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-
-    data = {
-        "reference": reference,
-        "destinationAccountNumber": destination_account_number,
-        "destinationBankCode": destination_bank_code,
-        "amount": amount,
-        "narration": narration,
-        "currency": "NGN",
-        "sourceAccountNumber": MONNIFY_WALLET_ACCOUNT,
-        # "walletId": source_account_number
-    }
-
-    print("Destination Account Number:", repr(destination_account_number))
-    print("Source Account Number:", repr(source_account_number))
-
-    logging.info(f"Monnify Transfer Request Data: {data}")
-
+    """
+    Initiate a single transfer using Monnify API v2 disbursement endpoint
+    Ref: https://docs.monnify.com/v1.0/reference/single-disbursement
+    """
     try:
-        # Using the correct disbursement endpoint according to Monnify's API
+        # Get authentication token
+        token = get_monnify_token()
+
+        # Prepare headers
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        # Prepare request payload
+        # Note: Carefully follow Monnify's documented payload structure
+        payload = {
+            "amount": str(amount),  # Ensure amount is a string
+            "destinationAccountNumber": destination_account_number,
+            "destinationBankCode": destination_bank_code,
+            "currency": "NGN",
+            "narration": narration,
+            "reference": reference,
+            # Ensure all required fields are included
+            "sourceAccountNumber": MONNIFY_WALLET_ACCOUNT,  # Use the configured wallet account
+        }
+
+        # Log detailed request information
+        logging.info("Monnify Transfer Request Payload:")
+        logging.info(json.dumps(payload, indent=2))
+
+        # Make the API call
         url = "https://api.monnify.com/api/v2/disbursements/single"
-        response = requests.post(url, json=data, headers=headers)
+        response = requests.post(url, json=payload, headers=headers)
 
-        # Log the raw response for debugging
-        logging.info(f"Raw Monnify Response: {response.text}")
+        # Log full response details
+        logging.info(f"Response Status Code: {response.status_code}")
+        logging.info(f"Response Headers: {response.headers}")
 
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Monnify Transfer Request Exception: {e}")
-        if hasattr(e, 'response'):
-            logging.error(f"Response content: {e.response.content}")
-            logging.error(f"Response status code: {e.response.status_code}")
-        return {"error": str(e)}
+        # Log full response text
+        full_response_text = response.text
+        logging.info(f"Full Response Text: {full_response_text}")
 
+        # Try to parse JSON response
+        try:
+            response_data = response.json()
+        except ValueError as json_error:
+            logging.error(f"JSON Parsing Error: {json_error}")
+            return {
+                "status": False,
+                "error": "Unable to parse JSON response",
+                "raw_response": full_response_text
+            }
 
+        # Comprehensive response handling
+        logging.info(f"Parsed Response Data: {response_data}")
+
+        # Monnify's response structure might differ from our initial assumptions
+        # Check the actual response structure
+        if response.status_code == 200:
+            # Monnify might use different keys
+            return {
+                "status": True,
+                "data": response_data,
+                "message": response_data.get('responseMessage', 'Transfer initiated'),
+                "transaction_reference": response_data.get('responseBody', {}).get('transactionReference')
+            }
+        else:
+            # Handle error responses
+            return {
+                "status": False,
+                "error_code": response.status_code,
+                "message": response_data.get('responseMessage', 'Transfer failed'),
+                "details": response_data
+            }
+
+    except requests.exceptions.RequestException as req_error:
+        logging.error(f"Request Exception: {req_error}")
+        return {
+            "status": False,
+            "error": str(req_error),
+            "type": "request_exception"
+        }
+    except Exception as unexpected_error:
+        logging.error(f"Unexpected Error: {unexpected_error}")
+        return {
+            "status": False,
+            "error": str(unexpected_error),
+            "type": "unexpected_error"
+        }
 
 # paystack transfer setup
 

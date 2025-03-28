@@ -75,11 +75,11 @@ async def transfer(transfer_data: TransferRequest, current_user=Depends(get_curr
 
 @router.post("/monnify/transfer/")
 async def monnify_transfer(
-    amount: float = Query(...),
-    destination_bank_code: str = Query(...),
-    destination_account_number: str = Query(...),
-    narration: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+        amount: float = Query(...),
+        destination_bank_code: str = Query(...),
+        destination_account_number: str = Query(...),
+        narration: str = Query(...),
+        current_user: dict = Depends(get_current_user)
 ):
     logging.info(f"Transfer request received for user: {str(current_user['_id'])}, amount: {amount}, bank: {destination_bank_code}, account: {destination_account_number}")
 
@@ -97,15 +97,23 @@ async def monnify_transfer(
 
     try:
         transfer_reference = f"TRANSFER_{str(ObjectId())}_{int(datetime.utcnow().timestamp())}"
-        response = initiate_monnify_transfer(amount, transfer_reference, narration, destination_bank_code, destination_account_number, current_user["account_number"])
-        logging.info(f"Monnify Transfer API Response: {response}")
+        response = initiate_monnify_transfer(
+            amount,
+            transfer_reference,
+            narration,
+            destination_bank_code,
+            destination_account_number,
+            current_user["account_number"]
+        )
+        # Logging the full response for debugging
+        logging.info(f"Full Monnify Transfer Response: {response}")
 
-        if response and response.get("requestSuccessful") == True:
+        if response.get("status", False):
             new_balance = current_user["wallet_balance"] - amount
             users.update_one({"_id": ObjectId(current_user["_id"])}, {"$set": {"wallet_balance": new_balance}})
 
             transaction = {
-                "user_id": str(current_user["_id"]),  # Convert ObjectId to string
+                "user_id": str(current_user["_id"]),
                 "type": "transfer",
                 "amount": amount,
                 "reference": transfer_reference,
@@ -122,12 +130,14 @@ async def monnify_transfer(
                 "reference": transfer_reference,
                 "amount": amount,
                 "new_balance": new_balance,
-                "transfer_details": response.get("responseBody"),
-                "transaction": {**transaction, "_id": str(transaction.get("_id", ""))}  # Convert _id if it exists
+                "transfer_details": response.get("responseBody", {}),
+                "transaction": {**transaction, "_id": str(transaction.get("_id", ""))}
             }
         else:
-            logging.error(f"Monnify Transfer API call failed: {response}")
-            raise HTTPException(status_code=400, detail="Transfer initiation failed")
+            # More informative error logging
+            error_message = response.get('error', 'Transfer initiation failed')
+            logging.error(f"Transfer Failed: {error_message}")
+            raise HTTPException(status_code=400, detail=error_message)
 
     except Exception as e:
         logging.error(f"Monnify Transfer API call failed: {e}")
