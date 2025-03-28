@@ -277,68 +277,181 @@ async def get_user_by_account(account_number: str, current_user=Depends(get_admi
     return user
 
 
+# @router.post("/monnify/webhook/")
+# async def monnify_webhook(request: Request):
+#     try:
+#         data = await request.json()
+#         logging.info(f"Webhook received: {data}")
+#
+#         event_type = data.get("eventType")
+#         transaction_reference = data.get("transactionReference")
+#         payment_status = data.get("paymentStatus")
+#         amount = float(data.get("amountPaid", 0))
+#         account_number = data.get("destinationAccountNumber")
+#         source_account = data.get("sourceAccountNumber")
+#         transaction_type = data.get("paymentMethod")
+#
+#         if event_type == "SUCCESSFUL_TRANSACTION" and payment_status == "PAID":
+#             # Check if it's an incoming transfer
+#             if source_account: #if source account exist, it is a transfer.
+#                 user = users.find_one({"account_number": account_number})
+#                 if not user:
+#                     logging.error(f"No user found for account {account_number}")
+#                     raise HTTPException(status_code=400, detail="User not found")
+#
+#                 new_balance = user.get("wallet_balance", 0) + amount
+#                 users.update_one({"_id": user["_id"]}, {"$set": {"wallet_balance": new_balance}})
+#
+#                 transaction = {
+#                     "user_id": str(user["_id"]),
+#                     "type": "deposit",
+#                     "amount": amount,
+#                     "reference": transaction_reference,
+#                     "method": transaction_type.lower(),
+#                     "status": "success",
+#                     "timestamp": datetime.utcnow(),
+#                 }
+#                 transactions.insert_one(transaction)
+#
+#                 return {"message": "Deposit recorded", "transaction": transaction}
+#             else: #if source account does not exist, it is a direct deposit.
+#                 user = users.find_one({"account_number": account_number})
+#                 if not user:
+#                     logging.error(f"No user found for account {account_number}")
+#                     raise HTTPException(status_code=400, detail="User not found")
+#
+#                 new_balance = user.get("wallet_balance", 0) + amount
+#                 users.update_one({"_id": user["_id"]}, {"$set": {"wallet_balance": new_balance}})
+#
+#                 transaction = {
+#                     "user_id": str(user["_id"]),
+#                     "type": "deposit",
+#                     "amount": amount,
+#                     "reference": transaction_reference,
+#                     "method": transaction_type.lower(),
+#                     "status": "success",
+#                     "timestamp": datetime.utcnow(),
+#                 }
+#                 transactions.insert_one(transaction)
+#
+#                 return {"message": "Deposit recorded", "transaction": transaction}
+#
+#         elif event_type == "TRANSFER_SUCCESS":
+#             sender = users.find_one({"account_number": source_account})
+#             if not sender:
+#                 logging.error(f"No sender found for account {source_account}")
+#                 raise HTTPException(status_code=400, detail="Sender not found")
+#
+#             new_balance = sender.get("wallet_balance", 0) - amount
+#             users.update_one({"_id": sender["_id"]}, {"$set": {"wallet_balance": new_balance}})
+#
+#             transaction = {
+#                 "user_id": str(sender["_id"]),
+#                 "type": "transfer",
+#                 "amount": amount,
+#                 "reference": transaction_reference,
+#                 "recipient_account": account_number,
+#                 "status": "success",
+#                 "timestamp": datetime.utcnow(),
+#             }
+#             transactions.insert_one(transaction)
+#
+#             return {"message": "Transfer recorded", "transaction": transaction}
+#
+#         return {"message": "Unhandled event type"}
+#
+#     except KeyError as e:
+#         logging.error(f"Webhook processing failed due to missing key: {e}")
+#         raise HTTPException(status_code=400, detail=f"Webhook processing failed: Missing key {e}")
+#     except Exception as e:
+#         logging.error(f"Webhook processing failed: {e}")
+#         raise HTTPException(status_code=400, detail="Webhook processing failed")
+
+
 @router.post("/monnify/webhook/")
 async def monnify_webhook(request: Request):
     try:
         data = await request.json()
         logging.info(f"Webhook received: {data}")
 
-        # Extract relevant fields
         event_type = data.get("eventType")
         transaction_reference = data.get("transactionReference")
         payment_status = data.get("paymentStatus")
-        amount = float(data.get("amountPaid", 0))  # Works for both deposits & transfers
-        account_number = data.get("destinationAccountNumber")  # Reserved account
-        source_account = data.get("sourceAccountNumber")  # For transfers
-        transaction_type = data.get("paymentMethod")  # USSD, Card, Bank Transfer
+        amount = float(data.get("amountPaid", 0))
+        account_number = data.get("destinationAccountNumber")
+        source_account = data.get("sourceAccountNumber")
+        transaction_type = data.get("paymentMethod")
 
-        # Handle deposits (incoming transactions)
         if event_type == "SUCCESSFUL_TRANSACTION" and payment_status == "PAID":
             user = users.find_one({"account_number": account_number})
             if not user:
                 logging.error(f"No user found for account {account_number}")
                 raise HTTPException(status_code=400, detail="User not found")
 
-            new_balance = user.get("wallet_balance", 0) + amount
-            users.update_one({"_id": user["_id"]}, {"$set": {"wallet_balance": new_balance}})
+            try:
+                current_balance = float(user.get("wallet_balance", 0))
+                new_balance = current_balance + amount
 
-            transaction = {
-                "user_id": str(user["_id"]),
-                "type": "deposit",
-                "amount": amount,
-                "reference": transaction_reference,
-                "method": transaction_type.lower(),
-                "status": "success",
-                "timestamp": datetime.utcnow(),
-            }
-            transactions.insert_one(transaction)
+                logging.info(f"Updating balance for user {user['_id']}. Current balance: {current_balance}, amount: {amount}, new balance: {new_balance}")
 
-            return {"message": "Deposit recorded", "transaction": transaction}
+                result = users.update_one({"_id": user["_id"]}, {"$set": {"wallet_balance": new_balance}})
 
-        # Handle transfers (outgoing transactions)
+                logging.info(f"Database update result: {result.modified_count}")
+
+                transaction = {
+                    "user_id": str(user["_id"]),
+                    "type": "deposit",
+                    "amount": amount,
+                    "reference": transaction_reference,
+                    "method": transaction_type.lower(),
+                    "status": "success",
+                    "timestamp": datetime.utcnow(),
+                }
+                transactions.insert_one(transaction)
+
+                return {"message": "Deposit recorded", "transaction": transaction}
+
+            except Exception as db_error:
+                logging.error(f"Error updating database: {db_error}")
+                raise HTTPException(status_code=500, detail="Database update failed")
+
         elif event_type == "TRANSFER_SUCCESS":
             sender = users.find_one({"account_number": source_account})
             if not sender:
                 logging.error(f"No sender found for account {source_account}")
                 raise HTTPException(status_code=400, detail="Sender not found")
+            try:
+                current_balance = float(sender.get("wallet_balance", 0))
+                new_balance = current_balance - amount
 
-            new_balance = sender.get("wallet_balance", 0) - amount
-            users.update_one({"_id": sender["_id"]}, {"$set": {"wallet_balance": new_balance}})
+                logging.info(f"Updating balance for sender {sender['_id']}. Current balance: {current_balance}, amount: {amount}, new balance: {new_balance}")
 
-            transaction = {
-                "user_id": str(sender["_id"]),
-                "type": "transfer",
-                "amount": amount,
-                "reference": transaction_reference,
-                "recipient_account": account_number,
-                "status": "success",
-                "timestamp": datetime.utcnow(),
-            }
-            transactions.insert_one(transaction)
+                result = users.update_one({"_id": sender["_id"]}, {"$set": {"wallet_balance": new_balance}})
 
-            return {"message": "Transfer recorded", "transaction": transaction}
+                logging.info(f"Database update result: {result.modified_count}")
+
+                transaction = {
+                    "user_id": str(sender["_id"]),
+                    "type": "transfer",
+                    "amount": amount,
+                    "reference": transaction_reference,
+                    "recipient_account": account_number,
+                    "status": "success",
+                    "timestamp": datetime.utcnow(),
+                }
+                transactions.insert_one(transaction)
+
+                return {"message": "Transfer recorded", "transaction": transaction}
+
+            except Exception as db_error:
+                logging.error(f"Error updating database: {db_error}")
+                raise HTTPException(status_code=500, detail="Database update failed")
 
         return {"message": "Unhandled event type"}
+
+    except KeyError as e:
+        logging.error(f"Webhook processing failed due to missing key: {e}")
+        raise HTTPException(status_code=400, detail=f"Webhook processing failed: Missing key {e}")
 
     except Exception as e:
         logging.error(f"Webhook processing failed: {e}")
