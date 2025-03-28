@@ -374,10 +374,12 @@ async def monnify_webhook(request: Request):
         data = await request.json()
         logging.info(f"Full webhook data: {data}")
 
-        # Extract event data if nested
+        # Extract event data and event type
         event_data = data.get('eventData', data)
+        event_type = data.get('eventType')  # Get event type from the root level
 
-        event_type = event_data.get("eventType")
+        logging.info(f"Event Type: {event_type}")
+
         payment_status = event_data.get("paymentStatus")
 
         # Use payment source information from the nested structure
@@ -409,7 +411,7 @@ async def monnify_webhook(request: Request):
 
                 result = users.update_one(
                     {"_id": user["_id"]},
-                    {"$set": {"wallet_balance": new_balance}}
+                    {"$set": {"wallet_balance": float(new_balance)}}  # Explicitly convert to float
                 )
 
                 transaction = {
